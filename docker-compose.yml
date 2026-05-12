@@ -1,0 +1,120 @@
+services:
+  # Infrastructure
+  mysql-inventory:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: inventory_db
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3307:3306"
+    volumes:
+      - inventory_db_data:/var/lib/mysql
+
+  mysql-catalog:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: catalog_db
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3308:3306"
+    volumes:
+      - catalog_db_data:/var/lib/mysql
+
+  mysql-orders:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: orders_db
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3309:3306"
+    volumes:
+      - orders_db_data:/var/lib/mysql
+
+  mysql-logistics:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: logistics_db
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    ports:
+      - "3310:3306"
+    volumes:
+      - logistics_db_data:/var/lib/mysql
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  # Microservices
+  gateway:
+    build: ./backend/gateway
+    ports:
+      - "8000:8000"
+    environment:
+      INVENTORY_SERVICE_URL: http://inventory-service:8001
+      CATALOG_SERVICE_URL: http://catalog-service:8002
+      ORDERS_SERVICE_URL: http://orders-service:8003
+    depends_on:
+      - inventory-service
+      - catalog-service
+      - orders-service
+
+  inventory-service:
+    build: ./backend/inventory
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: mysql+pymysql://root@mysql-inventory/inventory_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
+    depends_on:
+      - mysql-inventory
+      - rabbitmq
+
+  catalog-service:
+    build: ./backend/catalog
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: mysql+pymysql://root@mysql-catalog/catalog_db
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - mysql-catalog
+      - redis
+
+  orders-service:
+    build: ./backend/orders
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: mysql+pymysql://root@mysql-orders/orders_db
+      INVENTORY_SERVICE_URL: http://inventory-service:8001
+    depends_on:
+      - mysql-orders
+
+  alerts-service:
+    build: ./backend/alerts
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
+    depends_on:
+      - rabbitmq
+
+  logistics-service:
+    build: ./backend/logistics
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: mysql+pymysql://root@mysql-logistics/logistics_db
+    depends_on:
+      - mysql-logistics
+
+volumes:
+  inventory_db_data:
+  catalog_db_data:
+  orders_db_data:
+  logistics_db_data:
