@@ -37,7 +37,7 @@ function App() {
   };
 
   if (cargando) {
-    return <div className="min-h-screen flex items-center justify-center">Cargando...</div>;
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">Cargando...</div>;
   }
 
   return (
@@ -59,9 +59,9 @@ function App() {
           rolActual ? (
             <Navigate to={rolActual === 'admin' ? '/admin' : '/'} replace />
           ) : (
-            <div>
-              <nav className="bg-gray-900 shadow-md border-b border-gray-800 p-4">
-                <button onClick={() => navigate('/')} className="text-white hover:text-gray-300 font-medium text-sm flex items-center">
+            <div className="bg-brand-50 min-h-screen">
+              <nav className="bg-brand-50 shadow-sm border-b border-brand-200 p-4">
+                <button onClick={() => navigate('/')} className="text-brand-800 hover:text-brand-600 font-medium text-sm flex items-center transition-colors">
                   ← Volver a la Tienda
                 </button>
               </nav>

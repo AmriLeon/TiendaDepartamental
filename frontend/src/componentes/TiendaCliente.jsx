@@ -33,7 +33,7 @@ function TiendaCliente() {
     setMensajeCompra(null);
     const token = localStorage.getItem('token');
     try {
-      const response = await fetch('http://localhost:8000/orders/orders', {
+      const response = await fetch('http://localhost:8000/api/tpv/venta', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -43,7 +43,7 @@ function TiendaCliente() {
           items: [
             {
               id_variante: id_variante,
-              id_sucursal: id_sucursal,
+              id_sucursal: id_sucursal || 1, // Default fallback if no sucursal is specified
               cantidad: 1,
               precio_unitario: 500 // Simulando precio, en la vida real viene del carrito
             }
@@ -74,52 +74,52 @@ function TiendaCliente() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto bg-gray-50 min-h-screen">
-      <header className="mb-10 text-center">
-        <h2 className="text-4xl font-extrabold text-blue-900 mb-2">🛍️ EDMIRS - Portal de Compras</h2>
-        <p className="text-gray-600">Vista del Cliente (Punto de Venta Web)</p>
+    <div className="p-8 max-w-7xl mx-auto min-h-screen bg-brand-50">
+      <header className="mb-12 text-center">
+        <h2 className="text-5xl font-black text-brand-900 mb-3 tracking-tight">EDMIRS - Portal de Compras</h2>
+        <p className="text-brand-800 font-medium text-lg"> Punto de Venta </p>
       </header>
 
       {mensajeCompra && (
-        <div className={`mb-6 p-4 rounded-lg font-bold text-center ${mensajeCompra.includes('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+        <div className={`mb-8 p-4 rounded-xl font-bold text-center shadow-sm max-w-2xl mx-auto ${mensajeCompra.includes('✅') ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200'}`}>
           {mensajeCompra}
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {productos.map(producto => (
-          <div key={producto.id} className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 p-6 border border-gray-100 flex flex-col justify-between">
+          <div key={producto.id} className="bg-white rounded-3xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-brand-100 hover:border-brand-300 flex flex-col justify-between transform hover:-translate-y-1">
             <div>
-              <div className="flex justify-between items-start mb-3">
-                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md uppercase tracking-wider">{producto.sucursal}</span>
-                <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-1 rounded-md">{producto.categoria}</span>
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-xs font-bold text-brand-600 bg-brand-100 px-3 py-1.5 rounded-full uppercase tracking-widest">{producto.sucursal}</span>
+                <span className="text-xs font-semibold text-brand-800 bg-brand-50 border border-brand-200 px-3 py-1.5 rounded-full">{producto.categoria}</span>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">{producto.producto}</h3>
-              <p className="text-gray-500 text-sm mb-2">SKU: {producto.sku} | {producto.detalles}</p>
-              <div className="text-3xl font-extrabold text-blue-900 mb-4">${producto.precio}</div>
+              <h3 className="text-2xl font-extrabold text-brand-900 mb-2 leading-tight">{producto.producto}</h3>
+              <p className="text-brand-600 text-sm mb-4 font-medium">SKU: {producto.sku} | {producto.detalles}</p>
+              <div className="text-4xl font-black text-brand-900 mb-6">${producto.precio}</div>
             </div>
             
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="flex justify-between items-center mb-5">
-                <span className="text-gray-600 font-semibold text-sm">Disponibilidad:</span>
+            <div className="mt-2 pt-5 border-t border-brand-100">
+              <div className="flex justify-between items-center mb-6">
+                <span className="text-brand-800 font-semibold text-sm">Disponibilidad:</span>
                 {producto.stock > 0 ? (
-                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold shadow-sm">
+                  <span className="px-4 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-bold shadow-sm border border-green-200">
                     {producto.stock} unidades
                   </span>
                 ) : (
-                  <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-bold shadow-sm">
+                  <span className="px-4 py-1.5 bg-red-100 text-red-800 rounded-full text-xs font-bold shadow-sm border border-red-200">
                     Agotado
                   </span>
                 )}
               </div>
               
               <button 
-                onClick={() => handleComprar(producto.id, producto.id)} // id de la variante y sucursal. En un caso real vendría mapeado correctamente.
+                onClick={() => handleComprar(producto.id_variante, producto.id_sucursal)} 
                 disabled={producto.stock <= 0}
-                className={`w-full py-3.5 rounded-xl font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
+                className={`w-full py-4 rounded-2xl font-bold text-lg transition-all transform active:scale-[0.98] ${
                   producto.stock > 0 
-                    ? 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 shadow-md' 
-                    : 'bg-gray-300 cursor-not-allowed'
+                    ? 'bg-brand-100 text-brand-900 hover:bg-brand-200 border border-brand-200 shadow-sm' 
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
                 }`}
               >
                 {producto.stock > 0 ? '🛍️ Comprar 1 Unidad' : '❌ Sin Stock'}
