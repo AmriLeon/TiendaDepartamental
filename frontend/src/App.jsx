@@ -48,7 +48,7 @@ function App() {
       </Route>
 
       {/* Rutas de Administrador (Backend / Dashboard) */}
-      <Route element={<AdminLayout rolActual={rolActual} handleLogout={handleLogout} />}>
+      <Route element={rolActual === 'admin' ? <AdminLayout rolActual={rolActual} handleLogout={handleLogout} /> : <Navigate to="/login" replace />}>
         <Route path="/admin" element={<DashboardInventario />} />
       </Route>
 

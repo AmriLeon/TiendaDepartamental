@@ -1,27 +1,45 @@
+import { useState, useEffect } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 export default function Analiticas({ inventario }) {
-  // Datos mockeados para el ejemplo
-  const ticketPromedio = 3047.62;
-  const topProductos = [
-    { id: 1, nombre: 'Pantalon Youngla', uds: 20 },
-    { id: 2, nombre: 'Calcetines Largos', uds: 8 },
-    { id: 3, nombre: 'Playera Gymshark', uds: 6 },
-  ];
+  const [analiticas, setAnaliticas] = useState({
+    ticket_promedio: 0,
+    top_productos: [],
+    ventas_sucursal: []
+  });
+
+  useEffect(() => {
+    const fetchAnaliticas = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('http://localhost:8000/api/dashboard/analytics', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          setAnaliticas(await res.json());
+        }
+      } catch (e) {
+        console.error("Error cargando analíticas:", e);
+      }
+    };
+    fetchAnaliticas();
+    const interval = setInterval(fetchAnaliticas, 10000); // Polling 10s
+    return () => clearInterval(interval);
+  }, []);
 
   const barData = {
-    labels: ['Tienda en Linea', 'Sucursal Norte'],
+    labels: analiticas.ventas_sucursal.map(v => v.sucursal),
     datasets: [
       {
-        label: 'Ventas por Sucursal',
-        data: [62000, 1000],
-        backgroundColor: '#845162', // Adaptado a nuevo theme (brand-400)
+        label: 'Ingresos por Sucursal ($)',
+        data: analiticas.ventas_sucursal.map(v => v.total),
+        backgroundColor: '#845162', // brand-600
         borderRadius: 4,
-      },
-    ],
+      }
+    ]
   };
 
   const barOptions = {
@@ -56,7 +74,7 @@ export default function Analiticas({ inventario }) {
             🧾
           </div>
           <p className="text-brand-500 font-bold uppercase tracking-wider mb-2 text-sm">TICKET PROMEDIO</p>
-          <p className="text-4xl font-extrabold text-amber-500">${ticketPromedio.toFixed(2)}</p>
+          <p className="text-4xl font-extrabold text-amber-500">${analiticas.ticket_promedio.toFixed(2)}</p>
         </div>
 
         {/* Top Productos */}
@@ -65,7 +83,7 @@ export default function Analiticas({ inventario }) {
             🏆 TOP PRODUCTOS
           </h3>
           <div className="space-y-3">
-            {topProductos.map((prod, index) => (
+            {analiticas.top_productos.map((prod, index) => (
               <div key={prod.id} className="flex items-center justify-between bg-brand-50/50 border border-brand-100 p-3 rounded-lg">
                 <div className="flex items-center gap-3">
                   <span className="text-brand-600 font-mono font-bold">{index + 1}.</span>

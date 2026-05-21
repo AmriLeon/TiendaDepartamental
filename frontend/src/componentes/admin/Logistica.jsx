@@ -1,4 +1,42 @@
+import { useState, useEffect } from 'react';
+
 export default function Logistica() {
+  const [pedidos, setPedidos] = useState([]);
+
+  useEffect(() => {
+    fetchLogistica();
+    const interval = setInterval(fetchLogistica, 10000); // Polling 10s
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchLogistica = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:8000/api/dashboard/logistica', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setPedidos(await res.json());
+      }
+    } catch (e) {
+      console.error("Error cargando logistica:", e);
+    }
+  };
+
+  const moverPedido = async (id_pedido, nuevo_estado) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`http://localhost:8000/api/dashboard/logistica/${id_pedido}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ estado: nuevo_estado })
+      });
+      fetchLogistica();
+    } catch (e) {
+      console.error("Error moviendo pedido:", e);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-brand-900 flex items-center gap-2">
@@ -18,9 +56,17 @@ export default function Logistica() {
               🕒 PENDIENTE
             </div>
             <div className="p-4 flex-1 overflow-y-auto space-y-3 bg-brand-50/30">
-              <div className="bg-white border border-brand-200 p-3 rounded-lg text-brand-900 font-medium flex items-center gap-2 cursor-pointer hover:bg-brand-50 hover:border-brand-300 transition-colors shadow-sm">
-                📦 Pedido #001
-              </div>
+              {pedidos.filter(p => p.estado === 'pendiente').map(p => (
+                <div 
+                  key={p.id} 
+                  onClick={() => moverPedido(p.id, 'empacando')}
+                  className="bg-white border border-brand-200 p-3 rounded-lg text-brand-900 font-medium flex items-center justify-between cursor-pointer hover:bg-brand-50 hover:border-brand-300 transition-colors shadow-sm"
+                  title="Clic para mover a EMPACANDO"
+                >
+                  <span>📦 Pedido #{p.id}</span>
+                  <span className="text-xs text-brand-500">{p.fecha.split(' ')[1]}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -30,7 +76,17 @@ export default function Logistica() {
               📦 EMPACANDO
             </div>
             <div className="p-4 flex-1 overflow-y-auto space-y-3 bg-brand-50/30">
-              {/* Vacio por ahora */}
+              {pedidos.filter(p => p.estado === 'empacando').map(p => (
+                <div 
+                  key={p.id} 
+                  onClick={() => moverPedido(p.id, 'enviado')}
+                  className="bg-white border border-brand-200 p-3 rounded-lg text-brand-900 font-medium flex items-center justify-between cursor-pointer hover:bg-brand-50 hover:border-brand-300 transition-colors shadow-sm"
+                  title="Clic para mover a ENVIADO"
+                >
+                  <span>📦 Pedido #{p.id}</span>
+                  <span className="text-xs text-brand-500">{p.fecha.split(' ')[1]}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -40,7 +96,15 @@ export default function Logistica() {
               ✓ ENVIADO
             </div>
             <div className="p-4 flex-1 overflow-y-auto space-y-3 bg-brand-50/30">
-              {/* Vacio por ahora */}
+              {pedidos.filter(p => p.estado === 'enviado').map(p => (
+                <div 
+                  key={p.id} 
+                  className="bg-white border border-green-200 p-3 rounded-lg text-brand-900 font-medium flex items-center justify-between shadow-sm opacity-70"
+                >
+                  <span>📦 Pedido #{p.id}</span>
+                  <span className="text-xs text-brand-500">{p.fecha.split(' ')[1]}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -59,7 +123,7 @@ export default function Logistica() {
           
           <div className="relative z-10 flex flex-col items-center animate-bounce">
             <div className="bg-white text-brand-900 px-4 py-2 rounded-lg shadow-lg font-bold text-sm mb-2 relative border border-brand-200">
-              Repartidor en camino al cliente!
+              {pedidos.filter(p => p.estado === 'enviado').length > 0 ? `${pedidos.filter(p => p.estado === 'enviado').length} Repartidor(es) en camino!` : 'Esperando pedidos para envío...'}
               <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white border-b border-r border-brand-200 rotate-45"></div>
             </div>
             <div className="text-4xl drop-shadow-md">📍</div>

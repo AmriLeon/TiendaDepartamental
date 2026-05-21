@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from pydantic import BaseModel
 
 # Importamos la base de datos y los modelos
@@ -17,7 +17,8 @@ app = FastAPI(title="API Tienda Departamental Monolítica")
 # --- CONFIGURACIÓN DE CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "*"], 
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,8 +29,13 @@ SECRET_KEY = "tu_clave_secreta_super_segura"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+def get_password_hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 class UserRegister(BaseModel):
     username: str
@@ -48,7 +54,7 @@ async def register(user: UserRegister, db: Session = Depends(get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="Username or email already registered")
     
-    hashed_password = pwd_context.hash(user.password)
+    hashed_password = get_password_hash(user.password)
     new_user = modelos.Usuario(
         nombre_usuario=user.username,
         correo=user.email,
@@ -63,7 +69,7 @@ async def register(user: UserRegister, db: Session = Depends(get_db)):
 @app.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(modelos.Usuario).filter(modelos.Usuario.nombre_usuario == form_data.username).first()
-    if not user or not pwd_context.verify(form_data.password, user.contrasena_hash):
+    if not user or not verify_password(form_data.password, user.contrasena_hash):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": user.nombre_usuario, "rol": user.rol})
     return {"access_token": access_token, "token_type": "bearer", "rol": user.rol}
@@ -94,6 +100,7 @@ def obtener_inventario(db: Session = Depends(get_db)):
     # Hacemos una consulta relacional que une Inventario, Variante, Producto y Sucursal
     resultados = db.query(
         modelos.Inventario.id_inventario,
+        modelos.Inventario.id_sucursal,
         modelos.Inventario.stock_actual,
         modelos.Inventario.punto_pedido,
         modelos.Variante.id_variante,
@@ -103,6 +110,8 @@ def obtener_inventario(db: Session = Depends(get_db)):
         modelos.Variante.precio_base,
         modelos.Producto.nombre,
         modelos.Producto.categoria,
+        modelos.Producto.descripcion,
+        modelos.Producto.imagen,
         modelos.Sucursal.nombre.label("sucursal_nombre")
     ).join(modelos.Variante, modelos.Inventario.id_variante == modelos.Variante.id_variante)\
      .join(modelos.Producto, modelos.Variante.id_producto == modelos.Producto.id_producto)\
@@ -115,7 +124,10 @@ def obtener_inventario(db: Session = Depends(get_db)):
         inventario_formateado.append({
             "id": fila.id_inventario,
             "id_variante": fila.id_variante,
+            "id_sucursal": fila.id_sucursal if hasattr(fila, 'id_sucursal') else None,
             "producto": fila.nombre,
+            "descripcion": fila.descripcion or "",
+            "imagen": fila.imagen or "https://via.placeholder.com/150",
             "categoria": fila.categoria or "General",
             "sku": fila.sku,
             "precio": float(fila.precio_base) if fila.precio_base else 0.0,
@@ -214,7 +226,17 @@ def obtener_sucursales(db: Session = Depends(get_db)):
 
 @app.post("/api/tpv/venta")
 def procesar_venta(req: OrderCreate, current_user: modelos.Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Simular la venta en TPV descontando stock
+    # 1. Calcular total de la venta
+    total = sum(item.cantidad * item.precio_unitario for item in req.items)
+    
+    # 2. Crear registro de venta
+    nueva_venta = modelos.Venta(
+        id_usuario=current_user.id_usuario,
+        total=total
+    )
+    db.add(nueva_venta)
+    db.flush() # Para obtener el ID generado sin commitear aún
+
     for item in req.items:
         inventario = db.query(modelos.Inventario).filter(
             modelos.Inventario.id_variante == item.id_variante,
@@ -229,8 +251,126 @@ def procesar_venta(req: OrderCreate, current_user: modelos.Usuario = Depends(get
 
         if inventario and inventario.stock_actual >= item.cantidad:
             inventario.stock_actual -= item.cantidad
+            
+            # Registrar detalle de venta
+            detalle = modelos.DetalleVenta(
+                id_venta=nueva_venta.id_venta,
+                id_variante=item.id_variante,
+                id_sucursal=inventario.id_sucursal, # usar el real
+                cantidad=item.cantidad,
+                precio_unitario=item.precio_unitario
+            )
+            db.add(detalle)
         else:
+            db.rollback()
             raise HTTPException(status_code=400, detail=f"Stock insuficiente para variante {item.id_variante}")
             
+    # 3. Generar pedido logístico
+    nuevo_pedido = modelos.PedidoLogistica(
+        id_venta=nueva_venta.id_venta,
+        estado="pendiente"
+    )
+    db.add(nuevo_pedido)
+    
     db.commit()
-    return {"message": "Venta procesada con éxito"}
+    return {"message": "Venta procesada con éxito", "id_venta": nueva_venta.id_venta}
+
+# --- ANALÍTICAS ---
+from sqlalchemy.sql import func
+
+@app.get("/api/dashboard/analytics")
+def obtener_analiticas(db: Session = Depends(get_db)):
+    # 1. Ticket promedio
+    promedio = db.query(func.avg(modelos.Venta.total)).scalar() or 0.0
+    
+    # 2. Top Productos (sumando cantidad de detalles agrupados por variante)
+    top_query = db.query(
+        modelos.Producto.nombre,
+        func.sum(modelos.DetalleVenta.cantidad).label("uds_vendidas")
+    ).join(modelos.Variante, modelos.DetalleVenta.id_variante == modelos.Variante.id_variante)\
+     .join(modelos.Producto, modelos.Variante.id_producto == modelos.Producto.id_producto)\
+     .group_by(modelos.Producto.id_producto, modelos.Producto.nombre)\
+     .order_by(func.sum(modelos.DetalleVenta.cantidad).desc())\
+     .limit(3).all()
+     
+    top_productos = [{"id": i+1, "nombre": row.nombre, "uds": int(row.uds_vendidas)} for i, row in enumerate(top_query)]
+    
+    # 3. Ventas por Sucursal
+    sucursal_query = db.query(
+        modelos.Sucursal.nombre,
+        func.sum(modelos.DetalleVenta.cantidad * modelos.DetalleVenta.precio_unitario).label("total_sucursal")
+    ).join(modelos.Sucursal, modelos.DetalleVenta.id_sucursal == modelos.Sucursal.id_sucursal)\
+     .group_by(modelos.Sucursal.id_sucursal, modelos.Sucursal.nombre)\
+     .all()
+     
+    ventas_sucursal = [{"sucursal": row.nombre, "total": float(row.total_sucursal)} for row in sucursal_query]
+
+    # Handle Tienda en Línea fallback
+    if not ventas_sucursal:
+        ventas_sucursal = [{"sucursal": "Tienda en Línea", "total": float(promedio)}] # Placeholder
+        
+    return {
+        "ticket_promedio": float(promedio),
+        "top_productos": top_productos,
+        "ventas_sucursal": ventas_sucursal
+    }
+
+# --- LOGÍSTICA ---
+class UpdatePedidoStatus(BaseModel):
+    estado: str
+
+@app.get("/api/dashboard/logistica")
+def obtener_logistica(db: Session = Depends(get_db)):
+    pedidos = db.query(modelos.PedidoLogistica).all()
+    resultado = []
+    for p in pedidos:
+        resultado.append({
+            "id": p.id_pedido,
+            "id_venta": p.id_venta,
+            "estado": p.estado,
+            "fecha": p.fecha_actualizacion.strftime("%d/%m/%Y %H:%M")
+        })
+    return resultado
+
+@app.put("/api/dashboard/logistica/{id_pedido}")
+def actualizar_pedido(id_pedido: int, req: UpdatePedidoStatus, db: Session = Depends(get_db), current_user: modelos.Usuario = Depends(get_current_user)):
+    pedido = db.query(modelos.PedidoLogistica).filter(modelos.PedidoLogistica.id_pedido == id_pedido).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    
+    pedido.estado = req.estado
+    db.commit()
+    return {"message": "Estado actualizado"}
+
+# --- CLIENTES ---
+@app.get("/api/dashboard/clientes")
+def obtener_clientes(db: Session = Depends(get_db)):
+    clientes = db.query(modelos.Usuario).filter(modelos.Usuario.rol == 'cliente').all()
+    return [{"id": c.id_usuario, "nombre": c.nombre_usuario, "correo": c.correo} for c in clientes]
+
+@app.get("/api/dashboard/clientes/{id_cliente}/historial")
+def obtener_historial_cliente(id_cliente: int, db: Session = Depends(get_db)):
+    ventas = db.query(modelos.Venta).filter(modelos.Venta.id_usuario == id_cliente).all()
+    
+    historial = []
+    for v in ventas:
+        detalles = db.query(
+            modelos.DetalleVenta.cantidad,
+            modelos.DetalleVenta.precio_unitario,
+            modelos.Producto.nombre,
+            modelos.Producto.categoria
+        ).join(modelos.Variante, modelos.DetalleVenta.id_variante == modelos.Variante.id_variante)\
+         .join(modelos.Producto, modelos.Variante.id_producto == modelos.Producto.id_producto)\
+         .filter(modelos.DetalleVenta.id_venta == v.id_venta).all()
+         
+        for d in detalles:
+            historial.append({
+                "id": f"{v.id_venta}-{d.nombre}",
+                "fecha": v.fecha.strftime("%d/%m/%Y %H:%M"),
+                "producto": d.nombre,
+                "categoria": d.categoria,
+                "cant": d.cantidad,
+                "total": float(d.cantidad * d.precio_unitario)
+            })
+            
+    return historial

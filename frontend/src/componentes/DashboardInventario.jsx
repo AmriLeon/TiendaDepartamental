@@ -15,8 +15,18 @@ function DashboardInventario() {
         'Authorization': `Bearer ${token}`
       }
     })
-      .then((respuesta) => respuesta.json())
+      .then(async (respuesta) => {
+        if (respuesta.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('rol');
+          window.location.href = '/login';
+          return null;
+        }
+        return respuesta;
+      })
+      .then((respuesta) => (respuesta ? respuesta.json() : null))
       .then((datos) => {
+        if (datos === null) return;
         if (Array.isArray(datos)) {
           setInventario(datos);
         } else {
